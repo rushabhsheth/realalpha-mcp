@@ -8,3 +8,5 @@ export const SERVER = { name: 'app.realalpha/moments', title: 'Real Alpha', vers
 /** The path the server answers on, at the site's address */
 export const ROUTE = '/mcp';
 export const RATE_LIMIT = 120;
+/** Its code, in public (scripts/mcp-repo.mjs writes it from here) */
+export const REPOSITORY = 'https://github.com/rushabhsheth/realalpha-mcp';
