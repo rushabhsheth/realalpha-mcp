@@ -22,15 +22,22 @@ export interface Listed {
 const ORDER = ['builders', 'hosts', 'guests', 'founders', 'speakers'] as const;
 export type List = (typeof ORDER)[number];
 
-// Where each list's people have their page. Hosts have none: /hosts links them to X.
-const PAGES: Partial<Record<List, string>> = { builders: '/builders/', founders: '/builders/', guests: '/people/', speakers: '/people/' };
+// Where each list's people have their page. Hosts have one at /people/<id>/ like a guest's since 2026-10-22, so a host's
+// name on a segment page links somewhere (before, only /hosts linked them, to X).
+const PAGES: Partial<Record<List, string>> = {
+  builders: '/builders/',
+  founders: '/builders/',
+  hosts: '/people/',
+  guests: '/people/',
+  speakers: '/people/',
+};
 
 export interface Person {
   id: string;
   /** As their list spells it */
   name: string;
   list: List;
-  /** Their page: /builders/<id>/ for builders and listed founders, /people/<id>/ for guests and speakers */
+  /** Their page: /builders/<id>/ for builders and listed founders, /people/<id>/ for hosts, guests and speakers */
   profile?: string;
   x?: string;
 }

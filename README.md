@@ -10,9 +10,9 @@ Streamable HTTP, read-only, free, with no account and no key. How to add it, ste
 
 ## Add it
 
-- **Claude** (web or desktop): Settings › Connectors › Add custom connector, name it Real Alpha, paste the address.
+- **Claude** (web or desktop): Customize › Connectors › + Add › Add custom connector, name it Real Alpha, paste the address, Authentication: No sign in.
 - **Claude Code:** `claude mcp add --transport http real-alpha https://realalpha.app/mcp`
-- **ChatGPT:** Settings › Apps & Connectors › Advanced settings › Developer mode, then Create, paste the address, No authentication.
+- **ChatGPT** (web): Plugins › + › Add custom MCP server, paste the address as the Server URL, No authentication, Create as a plugin, then install it from your personal plugins.
 - **Cursor** (`~/.cursor/mcp.json`):
 
   ```json
