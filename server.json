@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "app.realalpha/moments",
+  "title": "Real Alpha",
+  "description": "What AI founders and researchers said in long interviews: quotes, speakers, dates and links to cite.",
+  "version": "1.0.0",
+  "websiteUrl": "https://realalpha.app/mcp/",
+  "repository": {
+    "url": "https://github.com/rushabhsheth/realalpha-mcp",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://realalpha.app/icons/icon-512.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://realalpha.app/mcp"
+    }
+  ]
+}

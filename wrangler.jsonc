@@ -1,0 +1,13 @@
+// The MCP server as a Worker of its own (src/index.ts). Make a D1 database, put its id below, apply schema.sql, fill
+// it, then `npm run deploy`. Real Alpha's own copy runs inside realalpha.app's site Worker instead.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "realalpha-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // AsyncLocalStorage (node:async_hooks), which the MCP SDK needs, and nothing else of Node's.
+  "compatibility_flags": ["nodejs_als"],
+  "d1_databases": [{ "binding": "DB", "database_name": "realalpha-mcp", "database_id": "00000000-0000-0000-0000-000000000000" }],
+  // src/lib/mcp.ts › RATE_LIMIT a minute from one address, in each Cloudflare location.
+  "ratelimits": [{ "name": "MCP_LIMIT", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } }]
+}

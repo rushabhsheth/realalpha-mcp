@@ -1,0 +1,34 @@
+{
+  "name": "realalpha-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "What AI founders and researchers said in long interviews: quotes, speakers, dates and links to cite.",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://realalpha.app/mcp/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rushabhsheth/realalpha-mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "podcasts",
+    "ai",
+    "cloudflare-workers"
+  ],
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 execute realalpha-mcp --local --file=schema.sql"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "agents": "0.28.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "wrangler": "^4.151.0"
+  }
+}
