@@ -16,9 +16,10 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { createMcpHandler } from 'agents/mcp/server';
 import { z } from 'zod';
 import { RATE_LIMIT, ROUTE, SERVER } from './lib/mcp';
+import { nameKey } from './lib/people';
 import { questionById, questions } from './lib/questions';
 import { SITE } from './lib/site';
-import { topics } from './lib/topics';
+import { segmentTopics as topics } from './lib/topics';
 import {
   answersTo,
   type Database,
@@ -147,14 +148,17 @@ function serverFor(env: McpEnv & { DB: Database }) {
       const who = found.found;
       const result = await momentsOf(env, who, topic, limit);
       if (result.all === 0) return problem(`Real Alpha hasn't cut a moment with ${who.name} talking yet.`);
-      // Someone on none of our lists has a page once one of their moments quotes them.
-      const page = who.list === 'speakers' ? result.moments.find((moment) => moment.speaker === who.name)?.speaker_page : who.page;
+      // Someone on none of our lists has a page once one of their moments quotes them, and goes by the name it spells
+      // ("Inès Ångström", asked about as "Ines Angstrom").
+      const quoted = who.list === 'speakers' ? result.moments.find((moment) => moment.speaker && who.keys.includes(nameKey(moment.speaker))) : undefined;
+      const name = quoted?.speaker ?? who.name;
+      const page = who.list === 'speakers' ? quoted?.speaker_page : who.page;
       return text({
-        person: { name: who.name, ...(who.role && { role: who.role }), ...(who.company && { company: who.company }), ...(page && { page }) },
+        person: { name, ...(who.role && { role: who.role }), ...(who.company && { company: who.company }), ...(page && { page }) },
         moments_in_all: result.all,
         ...(topic && { on_this_topic: result.matching }),
         moments: result.moments,
-        ...(topic && result.matching === 0 && { tip: `None of ${who.name}'s moments is about "${topic}". Leave out the topic to see them all.` }),
+        ...(topic && result.matching === 0 && { tip: `None of ${name}'s moments is about "${topic}". Leave out the topic to see them all.` }),
       });
     },
   );

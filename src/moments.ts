@@ -7,7 +7,8 @@
  * so an answer built from it links back to where it came from.
  *
  * Only what the live build has pages for counts: a segment cut after that build (its covers.at, later than /build.txt)
- * waits for the next one, so no link leads to a 404. Excerpts stay short, a quote or a minute of transcript, never a
+ * waits for the next one, so no link leads to a 404. The apps' search and Ask (worker/search.ts) find moments their own
+ * way and shape them with the pieces here (momentOf and the rest), so both say the same about a moment. Excerpts stay short, a quote or a minute of transcript, never a
  * whole transcript: the videos are the shows', and the site plays them in YouTube's player under YouTube's terms.
  */
 
@@ -18,7 +19,7 @@ import { PAGE_FROM, type Question, questionById } from './lib/questions';
 import { searchable } from './lib/search';
 import { SITE } from './lib/site';
 import { spoken, timecode } from './lib/time';
-import { topics } from './lib/topics';
+import { segmentTopics as topics } from './lib/topics';
 
 /** The parts of Cloudflare's D1 binding used here, typed as worker/push.ts types them, so the Worker's Env has both. */
 export interface Database {
@@ -95,7 +96,12 @@ interface Directory {
   shows: { id: string; name: string }[];
   /** Every id on the lists, which a speaker on none of them can't have for their /people/ page */
   taken: Set<string>;
+  /** How the moments write the words of names that aren't plain letters, by the word nameKey makes of each: "lutke" is "Lütke" */
+  spelled: Map<string, string[]>;
 }
+
+// The names a moment's people go by in the database: its quote's speaker and its guests.
+const NAMES = `(coalesce(s.quote ->> '$.speaker', '') || ' ' || coalesce(s.guest, ''))`;
 
 const DIRECTORY_SQL = [
   `SELECT b.id, b.name, b.aliases, b.role, CASE WHEN c.status = 'live' THEN c.name END AS company,
@@ -106,6 +112,8 @@ const DIRECTORY_SQL = [
   `SELECT id, name, aliases, role FROM guests WHERE status = 'live' ORDER BY position, id`,
   `SELECT id, name FROM companies WHERE status = 'live' ORDER BY position, id`,
   `SELECT id, name FROM shows WHERE status IN ('live', 'paused') ORDER BY position, id`,
+  // The moments' names with something besides plain letters, digits, spaces, commas and hyphens: "Tobi Lütke", "O’Brien".
+  `SELECT DISTINCT ${NAMES} AS names FROM segments s WHERE ${NAMES} GLOB '*[^a-zA-Z0-9 ,-]*'`,
 ];
 /** How long a Worker keeps the directory before reading it again, as segment pages keep their lists. */
 const DIRECTORY_FOR_MS = 5 * 60_000;
@@ -118,7 +126,7 @@ async function readDirectory(db: Database): Promise<Directory> {
   const kept = directories.get(db);
   if (kept && Date.now() - kept.at <= DIRECTORY_FOR_MS) return kept.value;
   const value = (db.batch(DIRECTORY_SQL.map((sql) => db.prepare(sql))) as Promise<{ results: Row[] }[]>).then(
-    ([builders, hosts, guests, companies, shows]) => {
+    ([builders, hosts, guests, companies, shows, written]) => {
       const people: Person[] = [];
       const byKey = new Map<string, Person>();
       // Builders first, as on the site, so someone on two lists gets their builder page.
@@ -144,12 +152,23 @@ async function readDirectory(db: Database): Promise<Directory> {
           for (const key of keys) if (!byKey.has(key)) byKey.set(key, person);
         }
       }
+      const spelled = new Map<string, string[]>();
+      for (const { names } of written.results) {
+        for (const word of String(names).split(/[^\p{L}\p{N}'’.]+/u)) {
+          const key = nameKey(word);
+          // A word of plain letters is found by its key alone: LIKE ignores their case.
+          if (!key || /^[a-z0-9]*$/i.test(word)) continue;
+          const spellings = spelled.get(key) ?? [];
+          if (!spellings.includes(word)) spelled.set(key, [...spellings, word]);
+        }
+      }
       return {
         people,
         byKey,
         companies: companies.results.map((row) => ({ id: row.id, name: row.name })),
         shows: shows.results.map((row) => ({ id: row.id, name: row.name })),
         taken: new Set(people.map((person) => person.id)),
+        spelled,
       };
     },
   );
@@ -242,18 +261,16 @@ export interface Moment {
   cite: string;
 }
 
-const MOMENT_COLUMNS = `s.id, s.video, s.rank, s.start, s."end", s.title, s.summary, s.takeaways, s.guest, s.quote, s.topics,
+export const MOMENT_COLUMNS = `s.id, s.video, s.rank, s.start, s."end", s.title, s.summary, s.takeaways, s.guest, s.quote, s.topics,
   s.questions, s.extra, v.show, coalesce(c.title, v.title) AS episode, v.published`;
 // A video gone from YouTube or made for kids (`hidden`) is off the site, as scripts/export-data.mjs leaves it out, and
 // a segment cut after the live build (?1) has no page yet. A cut video keeps the title it had when it was cut (covers).
-const MOMENTS_FROM = `FROM segments s JOIN videos v ON v.id = s.video JOIN covers c ON c.video = s.video
+export const MOMENTS_FROM = `FROM segments s JOIN videos v ON v.id = s.video JOIN covers c ON c.video = s.video
   WHERE v.hidden IS NULL AND c.at <= ?1`;
 // Everything a moment says, for matching words against: its title, summary, takeaways, quote, guests, episode, topics
 // and its answers to the big questions.
 const HAYSTACK = `(s.title || ' ' || s.summary || ' ' || s.takeaways || ' ' || coalesce(s.quote, '') || ' ' || coalesce(s.guest, '') || ' ' ||
   coalesce(c.title, v.title) || ' ' || coalesce(s.topics, '') || ' ' || coalesce(s.questions, ''))`;
-// The names a moment's people go by in the database: its quote's speaker and its guests.
-const NAMES = `(coalesce(s.quote ->> '$.speaker', '') || ' ' || coalesce(s.guest, ''))`;
 const NEWEST = 'ORDER BY v.published DESC, s.video, s.rank';
 /** The most rows one search reads before ranking them. */
 const CANDIDATES = 500;
@@ -284,7 +301,7 @@ interface Context {
 }
 
 /** Who's talking in a moment: the person on our lists, or the name as the moment gives it. */
-function speakerOf(row: Row, { directory }: Context): Person | undefined {
+export function speakerOf(row: Row, { directory }: Context): Person | undefined {
   const quote = row.quote ? JSON.parse(row.quote) : undefined;
   const name = whoIsTalking({ guest: row.guest ?? undefined, quote });
   if (!name) return undefined;
@@ -292,7 +309,7 @@ function speakerOf(row: Row, { directory }: Context): Person | undefined {
 }
 
 /** A segments row as a Moment: `full` adds its takeaways, which lists of many moments leave out. */
-function momentOf(row: Row, context: Context, full = false): Moment {
+export function momentOf(row: Row, context: Context, full = false): Moment {
   const showName = context.directory.shows.find((show) => show.id === row.show)?.name ?? row.show;
   const quote = row.quote ? JSON.parse(row.quote) : undefined;
   const person = speakerOf(row, context);
@@ -322,7 +339,7 @@ function momentOf(row: Row, context: Context, full = false): Moment {
   };
 }
 
-async function contextFor(db: Database, rows: Row[]): Promise<Context> {
+export async function contextFor(db: Database, rows: Row[]): Promise<Context> {
   const [directory, lineups] = await Promise.all([readDirectory(db), lineupsOf(db, rows.map((row) => row.video))]);
   return { directory, lineups };
 }
@@ -337,10 +354,31 @@ function theirs(row: Row, keys: Set<string>) {
   return speaker ? keys.has(nameKey(speaker)) : guestNames(row.guest ?? undefined).some((name) => keys.has(nameKey(name)));
 }
 
-/** The SQL that keeps a moment whose people include one of these names (the full check is `theirs`). */
-function namedSql(names: string[], from: number) {
+/**
+ * The LIKE pattern for text that has this in it, cut short to D1's limit: D1 refuses a pattern over 50 bytes, and with
+ * it the whole query. Cut, it still keeps every row the whole would, and the rows kept are checked in full afterwards.
+ */
+function containing(text: string) {
+  let kept = '';
+  for (const character of text) {
+    if (new TextEncoder().encode(`%${kept}${character}%`).length > 50) break;
+    kept += character;
+  }
+  return `%${kept}%`;
+}
+
+/** A word and the ways the moments write it when it isn't plain letters (see `spelled`), each as a LIKE pattern. */
+const writtenAs = (word: string, spelled: Directory['spelled']) => [...new Set([word, ...(spelled.get(word) ?? [])].map(containing))];
+
+/**
+ * The SQL that keeps a moment whose people include one of these names (the full check is `theirs`), by each name's last
+ * word as nameKey has it, and as the moments write that word when it isn't plain letters: LIKE ignores only ASCII
+ * letters' case, so "lutke" doesn't find "Lütke", nor "obrien" "O’Brien".
+ */
+function namedSql(names: string[], from: number, spelled: Directory['spelled']) {
   const words = [...new Set(names.map((name) => nameKey(name).split(' ').at(-1)!).filter((word) => word.length >= 2))];
-  return { sql: words.map((_, i) => `${NAMES} LIKE ?${from + i}`).join(' OR ') || '0', values: words.map((word) => `%${word}%`) };
+  const values = [...new Set(words.flatMap((word) => writtenAs(word, spelled)))];
+  return { sql: values.map((_, i) => `${NAMES} LIKE ?${from + i}`).join(' OR ') || '0', values };
 }
 
 // Words a search doesn't match on, unless it has nothing else: "what did Sam Altman say about agents" is about agents,
@@ -351,15 +389,29 @@ const STOP = new Set(
   ),
 );
 
-/** A search's words, lowercase and without accents, the small ones left out. */
-function termsOf(query: string) {
+// What a question is phrased with and says nothing about its subject: "tell me what people are saying about…", "why do
+// the ones…", "what's the latest on…", and the halves of a contraction (don't → "don", "t"). Ask leaves these out as
+// well as STOP's, since it counts how many of a question's words a moment covers (worker/search.ts › findMoments), where
+// "people" counts as much as "agents" does. A search keeps them: someone typing "people" wants it.
+const QUESTION_STOP = new Set(
+  'according aren around because before being both come comes coming couldn currently didn doesn don each else even ever every everyone everything explain explains few find give gives hadn happen happened happening happens hasn haven here him however isn kind later latest lately less let lets look looking looks made make makes making many may maybe mean means might more most must need needs never no now off often once ones only other others out own people please recently same saying see seem seems shouldn since some someone something still such sure take takes talking tell telling tells thinking thought thoughts through today too try trying wasn want wants weren whether while whom whose within without won wouldn yet'.split(
+    ' ',
+  ),
+);
+
+/**
+ * A search's words, lowercase and without accents, the small ones left out. With `question`, a question's filler too
+ * (QUESTION_STOP), for Ask. Either way at least one word is left: the question's own when all of them are filler.
+ */
+export function termsOf(query: string, options: { question?: boolean } = {}) {
   const words = [...new Set(searchable(query).match(/[\p{L}\p{N}]+/gu) ?? [])].filter((word) => word.length >= 2 || /\d/.test(word));
   const kept = words.filter((word) => !STOP.has(word));
-  return (kept.length ? kept : words).slice(0, 8);
+  const asked = options.question ? kept.filter((word) => !QUESTION_STOP.has(word)) : kept;
+  return ([asked, kept, words].find((list) => list.length) ?? words).slice(0, 8);
 }
 
 /** A word's pattern: it starts a word, so "agent" finds "agents" and "agentic" but "ai" doesn't find "said". */
-const wordPattern = (term: string) => new RegExp(`(?<![\\p{L}\\p{N}])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'u');
+export const wordPattern = (term: string) => new RegExp(`(?<![\\p{L}\\p{N}])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'u');
 
 /** The text a moment is matched on, each part with its weight: the title and quote above the summary. */
 function fieldsOf(row: Row): [string, number][] {
@@ -438,6 +490,7 @@ export async function searchMoments(env: MomentsEnv & { DB: Database }, options:
   const build = await liveBuild(env.ASSETS);
   const limit = Math.min(options.limit ?? 8, MOST);
   const company = options.company;
+  const { spelled } = await readDirectory(db);
 
   /** The rows with the search's words, all of them or any, and its filters, newest first. */
   const read = async (every: boolean) => {
@@ -448,14 +501,22 @@ export async function searchMoments(env: MomentsEnv & { DB: Database }, options:
       values.push(...bound);
     };
     if (terms.length) {
-      const from = values.length + 1;
-      where.push(`(${terms.map((_, i) => `${HAYSTACK} LIKE ?${from + i}`).join(every ? ' AND ' : ' OR ')})`);
-      values.push(...terms.map((term) => `%${term}%`));
+      // Each word as the moments may write it: "lutke" is also "Lütke" (see namedSql). Four patterns a word at most,
+      // so a search's eight words take no more than 32 of the 100 values D1 binds to a query.
+      const groups = terms.map((term) =>
+        writtenAs(term, spelled)
+          .slice(0, 4)
+          .map((pattern) => {
+            values.push(pattern);
+            return `${HAYSTACK} LIKE ?${values.length}`;
+          }),
+      );
+      where.push(`(${groups.map((group) => `(${group.join(' OR ')})`).join(every ? ' AND ' : ' OR ')})`);
     }
     if (options.show) add((at) => `v.show = ?${at}`, options.show);
     if (options.since) add((at) => `v.published >= ?${at}`, options.since);
     if (options.person) {
-      const named = namedSql(options.person.keys, values.length + 1);
+      const named = namedSql(options.person.keys, values.length + 1, spelled);
       where.push(`(${named.sql})`);
       values.push(...named.values);
     }
@@ -464,11 +525,12 @@ export async function searchMoments(env: MomentsEnv & { DB: Database }, options:
       const named = namedSql(
         company.people.flatMap((person) => person.keys),
         values.length + 3,
+        spelled,
       );
       add(
         (at) => `(${HAYSTACK} LIKE ?${at} OR s.video IN (SELECT video FROM appearances WHERE company LIKE ?${at + 1}) OR ${named.sql})`,
-        `%${company.name}%`,
-        `%${company.name}%`,
+        containing(company.name),
+        containing(company.name),
         ...named.values,
       );
     }
@@ -515,7 +577,7 @@ export async function searchMoments(env: MomentsEnv & { DB: Database }, options:
 /** Everything a person said in the moments we cut, newest first, or only on a topic, best match first. */
 export async function momentsOf(env: MomentsEnv & { DB: Database }, person: Person, topic?: string, limit = 10) {
   const db = env.DB;
-  const named = namedSql(person.keys, 2);
+  const named = namedSql(person.keys, 2, (await readDirectory(db)).spelled);
   const { results } = await db
     .prepare(`SELECT ${MOMENT_COLUMNS} ${MOMENTS_FROM} AND (${named.sql}) ${NEWEST} LIMIT ${CANDIDATES}`)
     .bind(await liveBuild(env.ASSETS), ...named.values)
@@ -546,10 +608,14 @@ export async function latestMoments(env: MomentsEnv & { DB: Database }, n: numbe
   return results.map((row) => momentOf(row, context));
 }
 
-/** One moment in full: its takeaways and topics, the big questions it answers, and the episode's other best minutes. */
-export async function getMoment(env: MomentsEnv & { DB: Database }, slug: string) {
+/**
+ * One moment in full: its takeaways and topics, the big questions it answers, and the episode's other best minutes.
+ * `live: false` reads one the live build doesn't have yet, for the news desk (worker/news.ts), whose item goes live in
+ * the same rebuild as the moment's page.
+ */
+export async function getMoment(env: MomentsEnv & { DB: Database }, slug: string, { live = true }: { live?: boolean } = {}) {
   const db = env.DB;
-  const build = await liveBuild(env.ASSETS);
+  const build = live ? await liveBuild(env.ASSETS) : '9999-12-31T23:59:59.999Z';
   const [row] = (await db.prepare(`SELECT ${MOMENT_COLUMNS} ${MOMENTS_FROM} AND s.id = ?2`).bind(build, slug).all<Row>()).results;
   if (!row) return undefined;
   const { results: episode } = await db

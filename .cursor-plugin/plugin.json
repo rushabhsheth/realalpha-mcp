@@ -1,0 +1,22 @@
+{
+  "name": "real-alpha",
+  "displayName": "Real Alpha",
+  "version": "1.0.0",
+  "description": "What AI founders and researchers said in long interviews: quotes, speakers, dates and links to cite.",
+  "author": {
+    "name": "Rushabh Sheth",
+    "url": "https://realalpha.app"
+  },
+  "homepage": "https://realalpha.app/mcp/",
+  "repository": "https://github.com/rushabhsheth/realalpha-mcp",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "podcasts",
+    "ai",
+    "cloudflare-workers"
+  ],
+  "logo": "https://realalpha.app/icons/icon-512.png"
+}

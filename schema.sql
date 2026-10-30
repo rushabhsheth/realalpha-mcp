@@ -34,7 +34,7 @@ CREATE TABLE segments (
   quote TEXT,
   transcript TEXT NOT NULL CHECK (transcript IN ('show', 'whisper')),
   model TEXT NOT NULL
-, lines TEXT, topics TEXT, extra INTEGER NOT NULL DEFAULT 0 CHECK (extra IN (0, 1)), questions TEXT);
+, lines TEXT, topics TEXT, extra INTEGER NOT NULL DEFAULT 0 CHECK (extra IN (0, 1)), questions TEXT, audio_start REAL, audio_end REAL);
 
 CREATE TABLE transcripts (
   video TEXT PRIMARY KEY REFERENCES videos (id),
@@ -43,7 +43,7 @@ CREATE TABLE transcripts (
   duration REAL,
   file TEXT NOT NULL,
   at TEXT NOT NULL
-, lines TEXT);
+, lines TEXT, guid TEXT, clean_duration REAL, audio_kind TEXT CHECK (audio_kind IN ('static', 'megaphone', 'lookup')));
 
 CREATE TABLE shows (
   id TEXT PRIMARY KEY,
@@ -55,7 +55,7 @@ CREATE TABLE shows (
   status TEXT NOT NULL DEFAULT 'live' CHECK (status IN ('live', 'paused', 'pending', 'hidden')),
   added TEXT NOT NULL,
   reason TEXT
-, gate TEXT CHECK (gate IN ('ai-guest')));
+, gate TEXT CHECK (gate IN ('ai-guest')), desk TEXT CHECK (desk IN ('markets', 'founders', 'sports', 'news', 'science')), lean TEXT CHECK (lean IN ('left', 'center', 'right')), clips TEXT CHECK (clips IN ('allowed', 'credit', 'program', 'ask', 'barred', 'unknown')), clips_terms TEXT, clips_source TEXT, clips_quote TEXT, clips_note TEXT, clips_checked TEXT);
 
 CREATE TABLE hosts (
   id TEXT PRIMARY KEY,
