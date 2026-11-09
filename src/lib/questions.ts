@@ -49,6 +49,8 @@ export interface Question {
   countsFor?: string;
   /** The page's heading, the question itself */
   question: string;
+  /** The question in a word or two, for the chips and lines that list several (src/pages/q/numbers/[month].astro): "GPU shortage" */
+  short: string;
   /** The page's <title>, which matches the question as people search it */
   title: string;
   /** The searches it answers, with their monthly US volume, as of the research */
@@ -67,6 +69,7 @@ export const questions: readonly Question[] = [
     id: 'is-ai-a-bubble',
     theme: 'Money and markets',
     question: 'Is AI a bubble?',
+    short: 'AI bubble',
     title: 'Is AI a bubble? What the people building it say',
     searches: 'ai bubble 62k, is ai a bubble 3k, when will the ai bubble burst 1.4k',
     about:
@@ -86,6 +89,7 @@ export const questions: readonly Question[] = [
     id: 'which-jobs-will-ai-replace',
     theme: 'Work and jobs',
     question: 'Which jobs will AI replace, and which are safe?',
+    short: 'Jobs',
     title: 'Which jobs will AI replace? What the people building it say',
     searches: 'what jobs will ai replace 2.5k, what jobs are safe from ai 2.3k, will ai replace jobs 600',
     about:
@@ -101,6 +105,7 @@ export const questions: readonly Question[] = [
     countsFor: 'which-jobs-will-ai-replace',
     theme: 'Work and jobs',
     question: 'Will AI replace software engineers?',
+    short: 'Software engineers',
     title: 'Will AI replace software engineers? What the people building it say',
     searches: 'will ai replace software engineers 800, will ai replace programmers 700',
     about:
@@ -116,6 +121,7 @@ export const questions: readonly Question[] = [
     countsFor: 'which-jobs-will-ai-replace',
     theme: 'Work and jobs',
     question: 'Will AI replace doctors?',
+    short: 'Doctors',
     title: 'Will AI replace doctors? What the people building it say',
     searches: 'will ai replace doctors 1.1k, will ai replace radiologists 450, will ai replace nurses 450',
     about: 'whether AI takes over what doctors and other clinicians do: diagnosis, treatment and care. It must say what happens to the doctors, not only what AI can diagnose',
@@ -130,6 +136,7 @@ export const questions: readonly Question[] = [
     countsFor: 'which-jobs-will-ai-replace',
     theme: 'Work and jobs',
     question: 'Will AI replace lawyers?',
+    short: 'Lawyers',
     title: 'Will AI replace lawyers? What the people building it say',
     searches: 'will ai replace lawyers 1.9k',
     about: 'whether AI takes over what lawyers do. It must say what happens to lawyers or legal work, not only that AI can read contracts',
@@ -143,6 +150,7 @@ export const questions: readonly Question[] = [
     id: 'is-saas-dead',
     theme: 'Money and markets',
     question: 'Is SaaS dead?',
+    short: 'SaaS',
     title: 'Is SaaS dead? What the people building AI say',
     searches: 'saas is dead 400 US, 3.5k worldwide',
     about:
@@ -157,6 +165,7 @@ export const questions: readonly Question[] = [
     id: 'when-will-we-get-agi',
     theme: 'Models and the race',
     question: 'When will we get AGI?',
+    short: 'AGI',
     title: 'When will we get AGI? What the people building it say',
     searches: 'when will agi arrive, agi timeline, superintelligence',
     about:
@@ -171,6 +180,7 @@ export const questions: readonly Question[] = [
     id: 'is-openai-profitable',
     theme: 'Money and markets',
     question: 'How does OpenAI make money, and is it profitable?',
+    short: 'OpenAI profits',
     title: 'Is OpenAI profitable? What the people building AI say',
     searches: 'is openai profitable 1.3k, how does openai make money 900',
     about:
@@ -185,6 +195,7 @@ export const questions: readonly Question[] = [
     id: 'ai-predictions',
     theme: 'What comes next',
     question: 'What will AI look like in the next few years?',
+    short: 'The next few years',
     title: 'AI predictions for the next few years, from the people building it',
     searches: 'ai predictions 1k, ai trends 2026 2.2k, future of ai 4.6k',
     about:
@@ -202,6 +213,7 @@ export const questions: readonly Question[] = [
     id: 'are-ai-agents-ready',
     theme: 'Agents and software',
     question: 'Are AI agents ready for real work?',
+    short: 'Agents',
     title: 'Are AI agents ready for real work? What the people building them say',
     searches: 'what can ai agents do 350, future of ai agents 200, are ai agents overhyped 70',
     about:
@@ -216,6 +228,7 @@ export const questions: readonly Question[] = [
     id: 'is-ai-paying-off',
     theme: 'Money and markets',
     question: 'Is AI paying off for companies?',
+    short: 'Paying off',
     title: 'Is AI paying off for companies? What the people building it say',
     searches: 'ai roi 1.3k, why do ai projects fail 60',
     about:
@@ -230,6 +243,7 @@ export const questions: readonly Question[] = [
     id: 'is-ai-dangerous',
     theme: 'Risk and rules',
     question: 'Is AI dangerous?',
+    short: 'AI risk',
     title: 'Is AI dangerous? What the people building it say',
     searches: 'will ai take over the world 7.5k, is ai dangerous 6.2k, ai safety 3.2k',
     about:
@@ -244,6 +258,7 @@ export const questions: readonly Question[] = [
     id: 'will-ai-make-cyberattacks-worse',
     theme: 'Risk and rules',
     question: 'Will AI make cyberattacks worse?',
+    short: 'Cyberattacks',
     title: 'Will AI make cyberattacks worse? What the people building it say',
     searches: 'ai cyber attacks 1.4k worldwide, will ai replace cybersecurity 150',
     about:
@@ -258,6 +273,7 @@ export const questions: readonly Question[] = [
     id: 'can-anyone-compete-with-nvidia',
     theme: 'Chips and power',
     question: 'Can anyone compete with Nvidia?',
+    short: 'Nvidia rivals',
     title: 'Can anyone compete with Nvidia? What the people building AI say',
     searches: 'nvidia competitors 2.9k, ai chips 1.8k',
     about:
@@ -272,6 +288,7 @@ export const questions: readonly Question[] = [
     id: 'is-there-a-gpu-shortage',
     theme: 'Chips and power',
     question: 'Is there still a GPU shortage?',
+    short: 'GPU shortage',
     title: 'Is there still a GPU shortage? What the people building AI say',
     searches: 'gpu shortage 2.9k',
     about: 'whether there is enough compute for AI (GPUs, data-center space, inference capacity) or whether a glut is coming',
@@ -285,6 +302,7 @@ export const questions: readonly Question[] = [
     id: 'is-there-enough-power-for-ai',
     theme: 'Chips and power',
     question: 'Is there enough power for AI?',
+    short: 'Power',
     title: 'Is there enough power for AI? What the people building it say',
     searches: 'data center power 1.2k, ai energy consumption 1.1k, ai data centers 35k',
     about:
@@ -299,6 +317,7 @@ export const questions: readonly Question[] = [
     id: 'is-moores-law-dead',
     theme: 'Chips and power',
     question: 'Is Moore’s law dead?',
+    short: 'Moore’s law',
     title: 'Is Moore’s law dead? What the people building AI say',
     searches: 'is moore’s law dead 500',
     about: 'whether computing keeps getting faster and cheaper at the old pace, through chips, packaging, whole systems or software',
@@ -312,6 +331,7 @@ export const questions: readonly Question[] = [
     id: 'is-ai-progress-slowing',
     theme: 'Models and the race',
     question: 'Is AI progress slowing down?',
+    short: 'Progress',
     title: 'Is AI progress slowing down? What the people building it say',
     searches: 'ai scaling laws 150, ai data wall 100, is ai plateauing 60, has ai hit a wall 30',
     about:
@@ -326,6 +346,7 @@ export const questions: readonly Question[] = [
     id: 'is-open-source-ai-catching-up',
     theme: 'Models and the race',
     question: 'Is open-source AI catching up?',
+    short: 'Open source',
     title: 'Is open-source AI catching up? What the people building it say',
     searches: 'open source ai 9.2k, open source vs closed source ai 150',
     about:
@@ -340,6 +361,7 @@ export const questions: readonly Question[] = [
     id: 'is-china-catching-up-in-ai',
     theme: 'Models and the race',
     question: 'Is China catching up in AI?',
+    short: 'China',
     title: 'Is China catching up in AI? What the people building it say',
     searches: 'deepseek vs chatgpt 16k, chinese ai models 700, us china ai race 100',
     about: 'whether Chinese labs and chipmakers are catching up with the US: DeepSeek, Qwen, distillation, export controls and talent',
@@ -353,6 +375,7 @@ export const questions: readonly Question[] = [
     id: 'is-ai-overhyped',
     theme: 'Models and the race',
     question: 'Is AI overhyped?',
+    short: 'Hype',
     title: 'Is AI overhyped? What the people building it say',
     searches: 'is ai overhyped 450',
     about:
@@ -367,6 +390,7 @@ export const questions: readonly Question[] = [
     id: 'will-ai-replace-google-search',
     theme: 'Agents and software',
     question: 'Will AI replace Google search?',
+    short: 'Google search',
     title: 'Will AI replace Google search? What the people building it say',
     searches: 'will chatgpt replace google 100',
     about: 'whether people stop searching Google and ask AI assistants instead, and what happens to Google and to the traffic websites get',
@@ -380,6 +404,7 @@ export const questions: readonly Question[] = [
     id: 'is-vibe-coding-the-future',
     theme: 'Agents and software',
     question: 'Is vibe coding the future?',
+    short: 'Vibe coding',
     title: 'Is vibe coding the future? What the people building AI say',
     searches: 'is vibe coding the future 150 (450 worldwide)',
     about: 'whether building software by telling an AI what you want, without reading the code, works for real products, and who it is for',
@@ -393,6 +418,7 @@ export const questions: readonly Question[] = [
     id: 'is-a-computer-science-degree-worth-it',
     theme: 'Work and jobs',
     question: 'Is a computer science degree still worth it?',
+    short: 'CS degrees',
     title: 'Is a computer science degree still worth it in the AI era?',
     searches: 'is a computer science degree worth it 500, is computer science still worth it 60, should i learn to code 50',
     about: 'whether learning to code or studying computer science still pays off when AI writes code, and what young people should learn',
@@ -406,6 +432,7 @@ export const questions: readonly Question[] = [
     id: 'are-ai-wrappers-a-real-business',
     theme: 'Money and markets',
     question: 'Are AI wrappers a real business?',
+    short: 'Wrappers',
     title: 'Are AI wrappers a real business? What the people building AI say',
     searches: 'ai wrapper 500 (2.8k worldwide)',
     about: 'whether startups built on other companies’ models can last, or get squeezed by the labs and copied',
@@ -419,6 +446,7 @@ export const questions: readonly Question[] = [
     id: 'how-do-ai-companies-make-money',
     theme: 'Money and markets',
     question: 'How do AI companies make money?',
+    short: 'Business models',
     title: 'How do AI companies make money? What the people building them say',
     searches: 'how do ai companies make money 350',
     about:
@@ -433,6 +461,7 @@ export const questions: readonly Question[] = [
     id: 'should-ai-be-regulated',
     theme: 'Risk and rules',
     question: 'Should AI be regulated?',
+    short: 'Regulation',
     title: 'Should AI be regulated? What the people building it say',
     searches: 'ai regulation 3.3k, should ai be regulated 300',
     about: 'whether and how governments should make rules for AI: safety laws, licensing, export controls, state laws, or leaving it to the market',
@@ -446,6 +475,7 @@ export const questions: readonly Question[] = [
     id: 'will-ai-cure-diseases',
     theme: 'Science and robots',
     question: 'Will AI cure diseases?',
+    short: 'Curing diseases',
     title: 'Will AI cure diseases? What the people building it say',
     searches: 'ai drug discovery 900, will ai cure cancer 600',
     about: 'whether AI finds new drugs and cures (protein models, virtual cells, AI scientists, faster trials) and how soon patients see it',
@@ -459,6 +489,7 @@ export const questions: readonly Question[] = [
     id: 'when-will-humanoid-robots-be-useful',
     theme: 'Science and robots',
     question: 'When will humanoid robots be useful?',
+    short: 'Humanoid robots',
     title: 'When will humanoid robots be useful? What the people building them say',
     searches: 'humanoid robots 5.7k, will robots replace humans 100, when will humanoid robots be available 70',
     about:
@@ -473,6 +504,7 @@ export const questions: readonly Question[] = [
     id: 'are-self-driving-cars-safe',
     theme: 'Science and robots',
     question: 'Are self-driving cars safe?',
+    short: 'Self-driving',
     title: 'Are self-driving cars safe? What the people building them say',
     searches: 'waymo vs tesla 1.1k, are self driving cars safe 900, tesla robotaxi 23k',
     about: 'whether self-driving cars are safe and ready to spread (Waymo, Tesla and others), and what it takes to drive with no one at the wheel',
@@ -486,6 +518,7 @@ export const questions: readonly Question[] = [
     id: 'will-ai-boost-economic-growth',
     theme: 'Money and markets',
     question: 'Will AI boost economic growth?',
+    short: 'Growth',
     title: 'Will AI boost economic growth? What the people building it say',
     searches: 'ai and the economy 150, will ai increase productivity 90',
     about: 'how much AI raises productivity and growth across the economy, and how soon it shows up in the numbers',
@@ -500,6 +533,7 @@ export const questions: readonly Question[] = [
     countsFor: 'which-jobs-will-ai-replace',
     theme: 'Work and jobs',
     question: 'Will AI replace accountants?',
+    short: 'Accountants',
     title: 'Will AI replace accountants? What the people building it say',
     searches: 'will ai replace accountants 2.2k, will ai replace financial advisors 500',
     about: 'whether AI takes over what accountants, bookkeepers, auditors and finance teams do. It must say what happens to those people or that work, not only that AI can read invoices',
@@ -514,6 +548,7 @@ export const questions: readonly Question[] = [
     countsFor: 'which-jobs-will-ai-replace',
     theme: 'Work and jobs',
     question: 'Will AI replace teachers?',
+    short: 'Teachers',
     title: 'Will AI replace teachers? What the people building it say',
     searches: 'will ai replace teachers 600, ai tutors 250',
     about: 'whether AI tutors take over what teachers do, and what happens to schools and learning. It must say what happens to teachers or teaching',
@@ -528,6 +563,7 @@ export const questions: readonly Question[] = [
     countsFor: 'which-jobs-will-ai-replace',
     theme: 'Work and jobs',
     question: 'Will AI replace customer service jobs?',
+    short: 'Customer service',
     title: 'Will AI replace customer service jobs? What the people building it say',
     searches: 'will ai replace customer service 150, will ai replace sales 150',
     about: 'whether AI agents take over customer support and sales work, and what happens to the people who did it',

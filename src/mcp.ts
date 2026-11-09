@@ -4,7 +4,9 @@
  * Code and the rest) connect to it over Streamable HTTP, with no account and no key, and search the moments Real Alpha
  * cuts from long interviews with the people building AI, read what one person said, see how they answer the big
  * questions (src/lib/questions.ts), and read a minute of an episode's transcript. It only reads (worker/moments.ts), and
- * every result carries its page on realalpha.app, so an assistant that answers from it links back to us.
+ * every result carries its page on realalpha.app, so an assistant that answers from it links back to us. Each tool also
+ * says what it answers (an outputSchema, with the same JSON as structuredContent) and the lines ChatGPT shows while it
+ * runs, as OpenAI's plugin directory asks (marketing/launch/directories/mcp/chatgpt-app.md).
  *
  * Stateless: the Agents SDK's createMcpHandler makes a fresh server for each request, with no session and no Durable
  * Object, and answers both the 2026-07-28 protocol and the 2025 Streamable HTTP clients. Each address gets
@@ -39,16 +41,55 @@ import {
 export interface McpEnv extends MomentsEnv {
   /** The Workers rate limiter for /mcp (wrangler.jsonc › ratelimits). Missing in tests that don't give one. */
   MCP_LIMIT?: { limit(options: { key: string }): Promise<{ success: boolean }> };
+  /**
+   * The token OpenAI's plugin portal shows to prove we own realalpha.app, served alone at OPENAI_CHALLENGE
+   * (src/lib/mcp.ts) once the secret is set (marketing/launch/directories/mcp/chatgpt-app.md).
+   */
+  OPENAI_APPS_CHALLENGE?: string;
 }
 
-const INSTRUCTIONS = `Real Alpha (${SITE}) cuts the minutes worth hearing from long interviews and podcasts with the people building AI: founders, CEOs and researchers at AI labs and companies, on shows like Lenny's Podcast, Dwarkesh Podcast, No Priors and BG2. Each moment is a few minutes of one episode, with the speaker's own words, a summary and its page.
+// What to do with the results comes first: OpenAI asks for the most important part in the first 512 characters
+// (developers.openai.com/apps-sdk/build/mcp-server).
+const INSTRUCTIONS = `Real Alpha (${SITE}) has the minutes worth hearing from long interviews with the people building AI: founders, CEOs and researchers, on shows like Lenny's Podcast, Dwarkesh Podcast, No Priors and BG2. Use it to find what a named person actually said, with the show and date, instead of paraphrasing from memory. When you use a moment, quote or paraphrase its \`quote\`, name the speaker, show and date, and link its \`url\` (the \`cite\` field has a ready line).
 
-Use it to find what a named person actually said, with the date and the show, instead of paraphrasing from memory. When you use a moment, quote or paraphrase its \`quote\`, name the speaker, show and date, and link its \`url\` (the \`cite\` field has a ready line). Results are short excerpts and links: for the full context, send people to the moment's page, which plays the episode from that minute.`;
+Each moment is a few minutes of one episode, with the speaker's own words, a summary and its page. Results are short excerpts and links: for the full context, send people to the moment's page, which plays the episode from that minute.`;
 
 /** Read-only, no side effects, and nothing outside Real Alpha's own catalog. */
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
-const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 1) }] });
+/**
+ * The line ChatGPT shows while a tool runs and once it's done (developers.openai.com/apps-sdk/reference › _meta fields
+ * on tool descriptor, 64 characters at most each). Other clients ignore them.
+ */
+const saying = (invoking: string, invoked: string) => ({ 'openai/toolInvocation/invoking': invoking, 'openai/toolInvocation/invoked': invoked });
+
+// What each tool answers, as its outputSchema: clients that read structuredContent, ChatGPT among them, get the same JSON
+// as the text, which the others read. The SDK checks every answer against these, so a field moments.ts adds goes here too.
+const MOMENT = {
+  slug: z.string().describe("The moment's id, for get_moment"),
+  title: z.string(),
+  speaker: z.string().optional().describe("Who's talking"),
+  speaker_role: z.string().optional().describe('What they do'),
+  speaker_page: z.string().optional().describe('Their page on realalpha.app, with every moment of theirs'),
+  show: z.string(),
+  show_page: z.string(),
+  episode: z.string(),
+  date: z.string().describe('When the episode came out, YYYY-MM-DD'),
+  quote: z.string().optional().describe('Their words, as said in the episode'),
+  summary: z.string(),
+  starts_at: z.string().describe('Where in the episode it starts, like 31:50'),
+  length: z.string(),
+  url: z.string().describe("The moment's page, which plays the episode from it: the link to cite"),
+  episode_url: z.string().describe("The episode's page, from the moment on"),
+  cite: z.string().describe('A line to credit it by'),
+};
+const MOMENTS = z.array(z.object(MOMENT));
+const TIP = z.string().optional().describe('What to try when nothing matched');
+
+const text = (value: Record<string, unknown>) => ({
+  content: [{ type: 'text' as const, text: JSON.stringify(value, null, 1) }],
+  structuredContent: value,
+});
 const problem = (message: string) => ({ content: [{ type: 'text' as const, text: message }], isError: true });
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -74,7 +115,7 @@ function serverFor(env: McpEnv & { DB: Database }) {
     {
       title: 'Search what AI leaders said',
       description:
-        'Search the moments Real Alpha cut from long interviews with the people building AI. Matches the words of `query` against what each moment is about, the speaker\'s quote and its takeaways, best match first. Filter by who is talking (`person`), a company (someone from it talking, or it being discussed), a show, or how recent. Each result has the speaker, what they do, the show, the date, their quote, and the moment\'s page to cite.',
+        'Search the moments Real Alpha cut from long interviews with the people building AI. Use it when someone asks what AI founders, CEOs or researchers have said about a subject. Matches the words of `query` against what each moment is about, the speaker\'s quote and its takeaways, best match first. Filter by who is talking (`person`), a company (someone from it talking, or it being discussed), a show, or how recent. Each result has the speaker, what they do, the show, the date, their quote, and the moment\'s page to cite. It only covers the episodes Real Alpha has cut, so no match doesn\'t mean nobody said it.',
       inputSchema: z.object({
         query: z.string().min(1).max(200).describe('What to look for, in a few words: "AI bubble", "coding agents replacing engineers", "scaling laws"'),
         person: z.string().max(100).optional().describe('Only moments where this person is talking, by name: "Sam Altman", "Dario Amodei"'),
@@ -83,7 +124,13 @@ function serverFor(env: McpEnv & { DB: Database }) {
         since: z.string().regex(DATE, 'A date like 2026-01-31').optional().describe('Only episodes out on or after this date, YYYY-MM-DD'),
         limit: z.number().int().min(1).max(MOST).optional().describe(`How many moments to return, 8 if not given, ${MOST} at most`),
       }),
+      outputSchema: z.object({
+        matches: z.number().int().describe('How many moments matched, of which `moments` has the best'),
+        moments: MOMENTS,
+        tip: TIP,
+      }),
       annotations: { title: 'Search what AI leaders said', ...READ_ONLY },
+      _meta: saying('Searching what AI leaders said…', 'Searched what AI leaders said'),
     },
     async ({ query, person, company, show, since, limit }) => {
       const found = person ? await findPerson(env.DB, person) : undefined;
@@ -110,11 +157,21 @@ function serverFor(env: McpEnv & { DB: Database }) {
     {
       title: 'Get one moment',
       description:
-        "One moment in full, by its slug (from search results) or its realalpha.app/s/ link: the speaker and what they do, the show and date, their quote, the summary and takeaways, its topics, the big questions it answers and how, and the episode's other best minutes.",
+        "One moment in full, by its slug (from search results) or its realalpha.app/s/ link: the speaker and what they do, the show and date, their quote, the summary and takeaways, its topics, the big questions it answers and how, and the episode's other best minutes. Use it to read a moment closely before quoting it, or when someone shares a realalpha.app/s/ link.",
       inputSchema: z.object({
         slug: z.string().min(1).max(200).describe('The moment\'s slug, like "ai-is-widening-the-gap-between-startups-and-incumbents", or its page\'s link'),
       }),
+      outputSchema: z.object({
+        ...MOMENT,
+        takeaways: z.array(z.string()).describe("The moment's main points"),
+        topics: z.array(z.string()),
+        answers: z
+          .array(z.object({ question: z.string(), question_id: z.string().describe('For answers_to'), stance: z.string(), says: z.string() }))
+          .describe('The big questions it answers, which way, and what the speaker says'),
+        more_from_the_episode: z.array(z.object({ title: z.string(), starts_at: z.string(), url: z.string() })).describe("The episode's other best minutes"),
+      }),
       annotations: { title: 'Get one moment', ...READ_ONLY },
+      _meta: saying('Opening the moment…', 'Opened the moment'),
     },
     async ({ slug }) => {
       const id = slugOf(slug);
@@ -129,7 +186,7 @@ function serverFor(env: McpEnv & { DB: Database }) {
     {
       title: 'What did they say?',
       description:
-        'What one person said in the interviews Real Alpha cut, newest first: every moment where they are talking, or only those on a topic, best match first. Also says who they are and links their page on Real Alpha, which lists all of it.',
+        'What one person said in the interviews Real Alpha cut, newest first: every moment where they are talking, or only those on a topic, best match first. Also says who they are and links their page on Real Alpha, which lists all of it. Use it when someone asks about one named person\'s views. It only knows people Real Alpha has cut a moment with, and asks for the full name when a name could be more than one person.',
       inputSchema: z.object({
         person: z.string().min(2).max(100).describe('Their name: "Jensen Huang", "Demis Hassabis", or a surname when only one person has it'),
         topic: z
@@ -139,7 +196,15 @@ function serverFor(env: McpEnv & { DB: Database }) {
           .describe(`A topic or a few words: one of Real Alpha's topics (${topics.map((each) => each.label).join(', ')}) or anything else, like "open source"`),
         limit: z.number().int().min(1).max(MOST).optional().describe(`How many moments to return, 10 if not given, ${MOST} at most`),
       }),
+      outputSchema: z.object({
+        person: z.object({ name: z.string(), role: z.string().optional(), company: z.string().optional(), page: z.string().optional() }),
+        moments_in_all: z.number().int().describe('How many moments Real Alpha has with them talking'),
+        on_this_topic: z.number().int().optional().describe('How many of those are about the topic'),
+        moments: MOMENTS,
+        tip: TIP,
+      }),
       annotations: { title: 'What did they say?', ...READ_ONLY },
+      _meta: saying('Looking up what they said…', 'Looked up what they said'),
     },
     async ({ person, topic, limit }) => {
       const found = await findPerson(env.DB, person);
@@ -167,13 +232,29 @@ function serverFor(env: McpEnv & { DB: Database }) {
     'answers_to',
     {
       title: 'How AI leaders answer a big question',
-      description: `How the people building AI answer one of the big questions people ask about it, from the moments Real Alpha cut: grouped by which way they answer, the biggest group first, each with what the speaker says, who they are, the show and date. The questions: ${questions
+      description: `How the people building AI answer one of the big questions people ask about it, from the moments Real Alpha cut: grouped by which way they answer, the biggest group first, each with what the speaker says, who they are, the show and date. Use it when someone asks where AI leaders stand on one of these questions; for any other question, search_moments. The questions: ${questions
         .map((question) => `${question.id} (${question.question})`)
         .join('; ')}.`,
       inputSchema: z.object({
         question: z.enum(questions.map((question) => question.id) as [string, ...string[]]).describe('The question\'s id, like "is-ai-a-bubble"'),
       }),
+      outputSchema: z.object({
+        question: z.string(),
+        page: z.string().optional().describe("The question's page on realalpha.app, once enough moments answer it"),
+        answered_by: z.number().int().describe('How many moments answer it'),
+        groups: z
+          .array(
+            z.object({
+              stance: z.string().describe('Which way they answer'),
+              count: z.number().int(),
+              moments: z.array(z.object({ says: z.string().describe("The speaker's answer, in a few words"), ...MOMENT })),
+            }),
+          )
+          .describe('The moments by which way they answer, the biggest group first'),
+        tip: TIP,
+      }),
       annotations: { title: 'How AI leaders answer a big question', ...READ_ONLY },
+      _meta: saying('Gathering how AI leaders answer it…', 'Gathered how AI leaders answer it'),
     },
     async ({ question }) => {
       const asked = questionById.get(question)!;
@@ -188,12 +269,24 @@ function serverFor(env: McpEnv & { DB: Database }) {
     {
       title: 'Read a minute of an episode',
       description:
-        "About a minute of an episode's transcript, from a second into the video, for an episode Real Alpha cut: the lines with their times and, where the transcript says, who is talking, plus the link that plays the episode from there. Use it to check the exact words around a moment's quote (a moment's `episode_url` has the video id and second).",
+        "About a minute of an episode's transcript, from a second into the video, for an episode Real Alpha cut: the lines with their times and, where the transcript says, who is talking, plus the link that plays the episode from there. Use it to check the exact words around a moment's quote (a moment's `episode_url` has the video id and second). Only the episodes Real Alpha cut have a transcript, never more than about a minute of one at a time, and a machine transcript can misspell names.",
       inputSchema: z.object({
         video: z.string().min(11).max(200).describe('The YouTube video id, like "dQw4w9WgXcQ", or a realalpha.app/v/ or YouTube link'),
         second: z.number().min(0).max(86_400).describe('Seconds into the video: 1910 for 31:50'),
       }),
+      outputSchema: z.object({
+        episode: z.string(),
+        show: z.string(),
+        date: z.string().describe('When the episode came out, YYYY-MM-DD'),
+        from: z.string().describe('Where the excerpt starts, like 31:40'),
+        lines: z.array(z.object({ at: z.string(), speaker: z.string().optional(), text: z.string() })),
+        transcript: z.string().describe('Where the transcript comes from'),
+        url: z.string().describe('The episode playing from that second'),
+        moment: z.object({ title: z.string(), url: z.string() }).optional().describe('The moment the second falls in, if any'),
+        cite: z.string(),
+      }),
       annotations: { title: 'Read a minute of an episode', ...READ_ONLY },
+      _meta: saying('Reading the transcript…', 'Read the transcript'),
     },
     async ({ video, second }) => {
       const id = video.trim().match(VIDEO_ID)?.[1];
@@ -209,12 +302,15 @@ function serverFor(env: McpEnv & { DB: Database }) {
     'latest_moments',
     {
       title: 'Latest moments',
-      description: "The newest moments Real Alpha cut, newest episode first: each episode's best minutes, from every show or only one.",
+      description:
+        "The newest moments Real Alpha cut, newest episode first: each episode's best minutes, from every show or only one. Use it when someone asks what AI leaders have said lately, or what's new on a show.",
       inputSchema: z.object({
         n: z.number().int().min(1).max(MOST).optional().describe(`How many, 10 if not given, ${MOST} at most`),
         show: z.string().max(100).optional().describe('Only from this show: "Lenny\'s Podcast"'),
       }),
+      outputSchema: z.object({ moments: MOMENTS }),
       annotations: { title: 'Latest moments', ...READ_ONLY },
+      _meta: saying('Getting the latest moments…', 'Got the latest moments'),
     },
     async ({ n, show }) => {
       const shown = show ? await findShow(env.DB, show) : undefined;
@@ -242,8 +338,6 @@ export async function answerMcp(request: Request, env: McpEnv, ctx?: { waitUntil
       : env.ASSETS.fetch(request);
   }
   if (request.method === 'POST' && env.MCP_LIMIT) {
-    // Until realalpha.app moves to this account, requests through proxy/ all come from Cloudflare's own address, so
-    // they share one count a minute in each Cloudflare location.
     const key = request.headers.get('CF-Connecting-IP') ?? 'unknown';
     const { success } = await env.MCP_LIMIT.limit({ key });
     if (!success) {

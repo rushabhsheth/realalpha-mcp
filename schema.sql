@@ -34,7 +34,7 @@ CREATE TABLE segments (
   quote TEXT,
   transcript TEXT NOT NULL CHECK (transcript IN ('show', 'whisper')),
   model TEXT NOT NULL
-, lines TEXT, topics TEXT, extra INTEGER NOT NULL DEFAULT 0 CHECK (extra IN (0, 1)), questions TEXT, audio_start REAL, audio_end REAL);
+, lines TEXT, topics TEXT, extra INTEGER NOT NULL DEFAULT 0 CHECK (extra IN (0, 1)), questions TEXT, audio_start REAL, audio_end REAL, brief TEXT);
 
 CREATE TABLE transcripts (
   video TEXT PRIMARY KEY REFERENCES videos (id),
