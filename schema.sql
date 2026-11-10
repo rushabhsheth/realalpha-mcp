@@ -45,6 +45,37 @@ CREATE TABLE transcripts (
   at TEXT NOT NULL
 , lines TEXT, guid TEXT, clean_duration REAL, audio_kind TEXT CHECK (audio_kind IN ('static', 'megaphone', 'lookup')));
 
+CREATE TABLE summaries (
+  video TEXT PRIMARY KEY REFERENCES videos (id),
+  guest TEXT,
+  role TEXT,
+  dek TEXT NOT NULL,
+  background TEXT,
+  summary TEXT NOT NULL,
+  points TEXT NOT NULL,
+  topics TEXT NOT NULL DEFAULT '[]',
+  transcript TEXT NOT NULL CHECK (transcript IN ('show', 'whisper')),
+  model TEXT NOT NULL,
+  at TEXT NOT NULL
+, hosts TEXT);
+
+CREATE TABLE analyses (
+  video TEXT PRIMARY KEY REFERENCES videos(id),
+  headline TEXT NOT NULL,
+  short TEXT NOT NULL,
+  sections TEXT NOT NULL,
+  for_you TEXT NOT NULL,
+  watch TEXT NOT NULL,
+  forward TEXT NOT NULL,
+  play TEXT NOT NULL,
+  model TEXT NOT NULL,
+  checker TEXT NOT NULL,
+  must INTEGER NOT NULL DEFAULT 0,
+  should INTEGER NOT NULL DEFAULT 0,
+  cost REAL,
+  at TEXT NOT NULL
+);
+
 CREATE TABLE shows (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,

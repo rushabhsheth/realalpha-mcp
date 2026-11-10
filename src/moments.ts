@@ -358,7 +358,7 @@ function theirs(row: Row, keys: Set<string>) {
  * The LIKE pattern for text that has this in it, cut short to D1's limit: D1 refuses a pattern over 50 bytes, and with
  * it the whole query. Cut, it still keeps every row the whole would, and the rows kept are checked in full afterwards.
  */
-function containing(text: string) {
+export function containing(text: string) {
   let kept = '';
   for (const character of text) {
     if (new TextEncoder().encode(`%${kept}${character}%`).length > 50) break;
@@ -410,8 +410,40 @@ export function termsOf(query: string, options: { question?: boolean } = {}) {
   return ([asked, kept, words].find((list) => list.length) ?? words).slice(0, 8);
 }
 
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /** A word's pattern: it starts a word, so "agent" finds "agents" and "agentic" but "ai" doesn't find "said". */
-export const wordPattern = (term: string) => new RegExp(`(?<![\\p{L}\\p{N}])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'u');
+export const wordPattern = (term: string) => new RegExp(`(?<![\\p{L}\\p{N}])${escaped(term)}`, 'u');
+
+// Words that end in s and aren't the plural of the word without it: "news" isn't the plural of "new".
+const NOT_PLURAL = new Set(['goods', 'means', 'news', 'odds']);
+
+/**
+ * The other ways a search word is written, singular or plural, near enough: "hyperscalers" is also "hyperscaler",
+ * "companies" "company", "boxes" "box", "caches" "cache", and "company" "companies". A word found only where it starts
+ * a word misses these, since "hyperscaler" starts "hyperscalers" but not the other way round.
+ */
+export function otherForms(term: string) {
+  if (term.endsWith('s')) {
+    if (term.endsWith('ss') || NOT_PLURAL.has(term)) return [];
+    // Dropping the s may leave two letters ("ads" is also "ad"), the longer endings three or more ("uses" isn't "us").
+    const singulars = [term.slice(0, -1), term.endsWith('ies') ? `${term.slice(0, -3)}y` : '', /(?:[sxz]|[cs]h)es$/.test(term) ? term.slice(0, -2) : ''];
+    return singulars.filter((form, i) => form.length >= (i ? 3 : 2));
+  }
+  return term.length >= 3 && /[^aeiou]y$/.test(term) ? [`${term.slice(0, -1)}ies`] : [];
+}
+
+/** A search word as a pattern's source: starting a word, or in one of its other forms as a whole word, so "apps" finds "app" but not "approach". */
+const formsSource = (term: string) => `(?:${[escaped(term), ...otherForms(term).map((form) => `${escaped(form)}(?![\\p{L}\\p{N}])`)].join('|')})`;
+
+/** A search word's pattern: as wordPattern has it, or in another of its forms, so "hyperscalers" finds "hyperscaler". */
+export const termPattern = (term: string) => new RegExp(`(?<![\\p{L}\\p{N}])${formsSource(term)}`, 'u');
+
+/** The fewest LIKE patterns that find a search word in all its forms: "%hyperscaler%" finds "hyperscalers" too. */
+export function formPatterns(term: string) {
+  const forms = [term, ...otherForms(term)];
+  return forms.filter((form) => !forms.some((other) => other !== form && form.includes(other))).map(containing);
+}
 
 /** The text a moment is matched on, each part with its weight: the title and quote above the summary. */
 function fieldsOf(row: Row): [string, number][] {
@@ -434,7 +466,7 @@ function fieldsOf(row: Row): [string, number][] {
 /** Which of a search's words a moment has, each with the weight of the best place it's in (0 when it hasn't). */
 const weightsOf = (fields: [string, number][], terms: string[]) =>
   terms.map((term) => {
-    const pattern = wordPattern(term);
+    const pattern = termPattern(term);
     return Math.max(0, ...fields.filter(([text]) => pattern.test(text)).map(([, weight]) => weight));
   });
 
@@ -449,12 +481,13 @@ function ranked(rows: Row[], terms: string[], every: boolean) {
     return { row, at, fields, weights: weightsOf(fields, terms) };
   });
   const rarity = terms.map((_, i) => Math.log(1 + matches.length / Math.max(1, matches.filter((match) => match.weights[i] > 0).length)));
-  const phrase = terms.join(' ');
+  // The whole phrase, its words in any of their forms: "data centers" is also "data center".
+  const phrase = new RegExp(terms.map(formsSource).join(' '), 'u');
   const scored = matches
     .filter(({ weights }) => (every ? weights.every((weight) => weight > 0) : weights.some((weight) => weight > 0)))
     .map(({ row, at, fields, weights }) => {
       let score = weights.reduce((sum, weight, i) => sum + weight * rarity[i], 0);
-      if (terms.length > 1 && [0, 1, 3, 6].some((i) => fields[i][0].includes(phrase))) score += 3 * Math.max(...rarity);
+      if (terms.length > 1 && [0, 1, 3, 6].some((i) => phrase.test(fields[i][0]))) score += 3 * Math.max(...rarity);
       // A best minute of its episode before an extra moment its viewing guide added, when the words match as well.
       return { row, at, score: score + (row.extra ? 0 : 0.1) };
     })
@@ -501,10 +534,11 @@ export async function searchMoments(env: MomentsEnv & { DB: Database }, options:
       values.push(...bound);
     };
     if (terms.length) {
-      // Each word as the moments may write it: "lutke" is also "Lütke" (see namedSql). Four patterns a word at most,
-      // so a search's eight words take no more than 32 of the 100 values D1 binds to a query.
+      // Each word in its other forms ("hyperscalers" is also "hyperscaler", see otherForms) and as the moments may write
+      // it: "lutke" is also "Lütke" (see namedSql). Four patterns a word at most, so a search's eight words take no more
+      // than 32 of the 100 values D1 binds to a query.
       const groups = terms.map((term) =>
-        writtenAs(term, spelled)
+        [...formPatterns(term), ...(spelled.get(term) ?? []).map(containing)]
           .slice(0, 4)
           .map((pattern) => {
             values.push(pattern);

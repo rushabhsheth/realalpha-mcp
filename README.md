@@ -40,6 +40,7 @@ Streamable HTTP, read-only, free, with no account and no key. How to add it, ste
 | Tool | What it does | Ask it |
 | --- | --- | --- |
 | `search_moments` | Searches every moment by what was said, with filters for who's talking, a company, a show or a date | "What have the people building AI said about the AI bubble?" |
+| `summarize_episode` | An episode cut summarized from its YouTube link or name: what it covers, a point per part with its time, its best minutes | "Summarize this episode: https://www.youtube.com/watch?v=…" |
 | `what_did_they_say` | Everything one person said in the interviews cut, or only on a topic, with who they are | "What has Jensen Huang said about AI demand?" |
 | `answers_to` | How builders answer a big question about AI (a bubble? which jobs? when AGI?), grouped by which way they answer | "Will AI replace software engineers?" |
 | `get_moment` | One moment in full: quote, takeaways, topics, the questions it answers, the episode's other best minutes | "Tell me more about that Satya Nadella moment." |

@@ -2,8 +2,10 @@
 /**
  * The MCP server at https://realalpha.app/mcp, "ask what AI leaders said": AI assistants (Claude, ChatGPT, Cursor, VS
  * Code and the rest) connect to it over Streamable HTTP, with no account and no key, and search the moments Real Alpha
- * cuts from long interviews with the people building AI, read what one person said, see how they answer the big
- * questions (src/lib/questions.ts), and read a minute of an episode's transcript. It only reads (worker/moments.ts), and
+ * cuts from long interviews with the people building AI, summarize one episode from its YouTube link or name
+ * (worker/episodes.ts), read what one person said, see how they answer the big questions (src/lib/questions.ts), and
+ * read a minute of an episode's transcript. A name or show we don't know is an answer saying what to try, not a failed
+ * call, since Claude's directory counts failed calls against a connector. It only reads (worker/moments.ts), and
  * every result carries its page on realalpha.app, so an assistant that answers from it links back to us. Each tool also
  * says what it answers (an outputSchema, with the same JSON as structuredContent) and the lines ChatGPT shows while it
  * runs, as OpenAI's plugin directory asks (marketing/launch/directories/mcp/chatgpt-app.md).
@@ -22,6 +24,7 @@ import { nameKey } from './lib/people';
 import { questionById, questions } from './lib/questions';
 import { SITE } from './lib/site';
 import { segmentTopics as topics } from './lib/topics';
+import { summarizeEpisode } from './episodes';
 import {
   answersTo,
   type Database,
@@ -49,10 +52,11 @@ export interface McpEnv extends MomentsEnv {
 }
 
 // What to do with the results comes first: OpenAI asks for the most important part in the first 512 characters
-// (developers.openai.com/apps-sdk/build/mcp-server).
-const INSTRUCTIONS = `Real Alpha (${SITE}) has the minutes worth hearing from long interviews with the people building AI: founders, CEOs and researchers, on shows like Lenny's Podcast, Dwarkesh Podcast, No Priors and BG2. Use it to find what a named person actually said, with the show and date, instead of paraphrasing from memory. When you use a moment, quote or paraphrase its \`quote\`, name the speaker, show and date, and link its \`url\` (the \`cite\` field has a ready line).
+// (developers.openai.com/apps-sdk/build/mcp-server). It leads with what people ask an assistant for, since Claude's
+// directory suggests a connector when it fits the task at hand (claude.com/docs/connectors/directory).
+const INSTRUCTIONS = `Real Alpha (${SITE}) has listened to long interviews and podcasts with the people building AI (founders, CEOs and researchers on Lenny's Podcast, Dwarkesh Podcast, No Priors, BG2 and more). Use it to summarize an episode from its YouTube link or name, since you can't watch it, or to find what a named person actually said, with the show and date. When you use a moment, quote its \`quote\`, name the speaker, show and date, and link its \`url\` (\`cite\` has a ready line).
 
-Each moment is a few minutes of one episode, with the speaker's own words, a summary and its page. Results are short excerpts and links: for the full context, send people to the moment's page, which plays the episode from that minute.`;
+Each moment is a few minutes of one episode, with the speaker's own words, a summary and its page. Results are short excerpts and links: for the full context, send people to the moment's page, which plays the episode from that minute, or the episode's page.`;
 
 /** Read-only, no side effects, and nothing outside Real Alpha's own catalog. */
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
@@ -106,16 +110,16 @@ function serverFor(env: McpEnv & { DB: Database }) {
     { instructions: INSTRUCTIONS },
   );
 
-  /** The people a name could mean, as a message that asks for the full name. */
-  const which = (name: string, people: { name: string; role?: string }[]) =>
-    problem(`"${name}" could be ${people.map((person) => (person.role ? `${person.name} (${person.role})` : person.name)).join(', ')}. Ask again with their full name.`);
+  /** The people a name could mean, as a tip that asks for the full name. */
+  const couldBe = (name: string, people: { name: string; role?: string }[]) =>
+    `"${name}" could be ${people.map((person) => (person.role ? `${person.name} (${person.role})` : person.name)).join(', ')}. Ask again with their full name.`;
 
   server.registerTool(
     'search_moments',
     {
       title: 'Search what AI leaders said',
       description:
-        'Search the moments Real Alpha cut from long interviews with the people building AI. Use it when someone asks what AI founders, CEOs or researchers have said about a subject. Matches the words of `query` against what each moment is about, the speaker\'s quote and its takeaways, best match first. Filter by who is talking (`person`), a company (someone from it talking, or it being discussed), a show, or how recent. Each result has the speaker, what they do, the show, the date, their quote, and the moment\'s page to cite. It only covers the episodes Real Alpha has cut, so no match doesn\'t mean nobody said it.',
+        'Search the moments Real Alpha cut from long interviews with the people building AI. Use it when someone asks what AI founders, CEOs or researchers have said about a subject, or wants sources, quotes or expert views on an AI question. Matches the words of `query` against what each moment is about, the speaker\'s quote and its takeaways, best match first. Filter by who is talking (`person`), a company (someone from it talking, or it being discussed), a show, or how recent. Each result has the speaker, what they do, the show, the date, their quote, and the moment\'s page to cite. It only covers the episodes Real Alpha has cut, so no match doesn\'t mean nobody said it.',
       inputSchema: z.object({
         query: z.string().min(1).max(200).describe('What to look for, in a few words: "AI bubble", "coding agents replacing engineers", "scaling laws"'),
         person: z.string().max(100).optional().describe('Only moments where this person is talking, by name: "Sam Altman", "Dario Amodei"'),
@@ -133,12 +137,14 @@ function serverFor(env: McpEnv & { DB: Database }) {
       _meta: saying('Searching what AI leaders said…', 'Searched what AI leaders said'),
     },
     async ({ query, person, company, show, since, limit }) => {
+      // A filter that names no one or no show we know is an answer with nothing in it, not a failed call.
+      const none = (tip: string) => text({ matches: 0, moments: [], tip });
       const found = person ? await findPerson(env.DB, person) : undefined;
-      if (found && 'ambiguous' in found) return which(person!, found.ambiguous);
-      if (found && 'missing' in found) return problem(`No one called "${person}" is in Real Alpha's moments. Try their full name.`);
+      if (found && 'ambiguous' in found) return none(couldBe(person!, found.ambiguous));
+      if (found && 'missing' in found) return none(`No one called "${person}" is in Real Alpha's moments. Try their full name, or drop \`person\`.`);
       const shown = show ? await findShow(env.DB, show) : undefined;
-      if (shown && 'ambiguous' in shown) return problem(`"${show}" could be ${shown.ambiguous.map((each) => each.name).join(', ')}.`);
-      if (shown && 'missing' in shown) return problem(`Real Alpha doesn't follow a show called "${show}".`);
+      if (shown && 'ambiguous' in shown) return none(`"${show}" could be ${shown.ambiguous.map((each) => each.name).join(', ')}. Ask again with one of them.`);
+      if (shown && 'missing' in shown) return none(`Real Alpha doesn't follow a show called "${show}". Drop \`show\` to search them all.`);
       const result = await searchMoments(env, {
         query,
         ...(found && { person: found.found }),
@@ -149,6 +155,64 @@ function serverFor(env: McpEnv & { DB: Database }) {
       });
       if (result.total === 0) return text({ matches: 0, moments: [], tip: 'Nothing matched. Try fewer or broader words, or drop a filter.' });
       return text({ matches: result.total, moments: result.moments });
+    },
+  );
+
+  server.registerTool(
+    'summarize_episode',
+    {
+      title: 'Summarize a podcast episode',
+      description:
+        "A summary of one long interview or podcast episode Real Alpha cut, found by its YouTube or realalpha.app link, or by words naming it (the show and the guest, or its title): what it covers, the guests and what they do, a point for each part of the conversation with its time, its best minutes in the speaker's own words, the opening of its full analysis, and the page to cite. Use it when someone shares a YouTube link to an AI interview or podcast, or asks to summarize, recap or get the key points of an episode: you can't watch the video, and Real Alpha has listened to it. It covers the episodes Real Alpha cut from the shows it follows; for one it hasn't cut it says so, and how to ask for it.",
+      inputSchema: z.object({
+        episode: z
+          .string()
+          .min(2)
+          .max(300)
+          .describe('A YouTube or realalpha.app/v/ link, a video id, or words that name it: "Boris Cherny on Lenny\'s Podcast", "the latest Dwarkesh Podcast"'),
+        show: z.string().max(100).optional().describe('Only episodes of this show: "No Priors"'),
+      }),
+      outputSchema: z.object({
+        found: z.boolean().describe('Whether Real Alpha knows the episode'),
+        cut: z.boolean().optional().describe('Whether Real Alpha cut it: only cut episodes have a summary'),
+        episode: z.string().optional(),
+        show: z.string().optional(),
+        show_page: z.string().optional(),
+        date: z.string().optional().describe('When the episode came out, YYYY-MM-DD'),
+        guests: z.string().optional(),
+        guests_are: z.string().optional().describe('What the guests do, in the same order'),
+        hosts: z.string().optional(),
+        video: z.string().optional().describe('The YouTube video id, for transcript_excerpt'),
+        url: z.string().optional().describe("The episode's page on realalpha.app, which plays it: the link to cite"),
+        youtube: z.string().optional(),
+        dek: z.string().optional().describe('The episode in a sentence'),
+        background: z.string().optional().describe('Who the guests are, and the context'),
+        summary: z.string().optional(),
+        points: z
+          .array(z.object({ at: z.string().describe('Where in the episode, like 31:50'), title: z.string(), text: z.string(), url: z.string().describe('The episode playing from there') }))
+          .optional()
+          .describe('A point for each part of the conversation, in order'),
+        best_moments: MOMENTS.optional().describe("The episode's best minutes, best first"),
+        analysis: z
+          .object({ headline: z.string(), opening: z.array(z.string()), url: z.string(), rest: z.string() })
+          .optional()
+          .describe("The opening of Real Alpha's full analysis of the episode, and where the rest is"),
+        transcript: z.string().optional(),
+        cite: z.string().optional(),
+        other_matches: z
+          .array(z.object({ episode: z.string(), show: z.string(), date: z.string(), video: z.string(), url: z.string() }))
+          .optional()
+          .describe('Other episodes the words matched, for when this is the wrong one'),
+        tip: TIP,
+      }),
+      annotations: { title: 'Summarize a podcast episode', ...READ_ONLY },
+      _meta: saying('Reading the episode…', 'Read the episode'),
+    },
+    async ({ episode, show }) => {
+      const shown = show ? await findShow(env.DB, show) : undefined;
+      if (shown && 'ambiguous' in shown) return text({ found: false, tip: `"${show}" could be ${shown.ambiguous.map((each) => each.name).join(', ')}. Ask again with one of them.` });
+      if (shown && 'missing' in shown) return text({ found: false, tip: `Real Alpha doesn't follow a show called "${show}". Drop \`show\`, or give the episode's YouTube link.` });
+      return text(await summarizeEpisode({ ...env, DB: env.DB }, episode, shown?.found));
     },
   );
 
@@ -207,12 +271,14 @@ function serverFor(env: McpEnv & { DB: Database }) {
       _meta: saying('Looking up what they said…', 'Looked up what they said'),
     },
     async ({ person, topic, limit }) => {
+      // Someone we have no moments with is an answer with none in it, saying what to try, not a failed call.
+      const nobody = (tip: string) => text({ person: { name: person.trim() }, moments_in_all: 0, moments: [], tip });
       const found = await findPerson(env.DB, person);
-      if ('ambiguous' in found) return which(person, found.ambiguous);
-      if ('missing' in found) return problem(`No one called "${person}" is in Real Alpha's moments. Try their full name.`);
+      if ('ambiguous' in found) return nobody(couldBe(person, found.ambiguous));
+      if ('missing' in found) return nobody(`No one called "${person}" is in Real Alpha's moments. Try their full name, or search_moments for the subject.`);
       const who = found.found;
       const result = await momentsOf(env, who, topic, limit);
-      if (result.all === 0) return problem(`Real Alpha hasn't cut a moment with ${who.name} talking yet.`);
+      if (result.all === 0) return nobody(`Real Alpha hasn't cut a moment with ${who.name} talking yet. search_moments finds what others said on the subject.`);
       // Someone on none of our lists has a page once one of their moments quotes them, and goes by the name it spells
       // ("Inès Ångström", asked about as "Ines Angstrom").
       const quoted = who.list === 'speakers' ? result.moments.find((moment) => moment.speaker && who.keys.includes(nameKey(moment.speaker))) : undefined;
@@ -303,7 +369,7 @@ function serverFor(env: McpEnv & { DB: Database }) {
     {
       title: 'Latest moments',
       description:
-        "The newest moments Real Alpha cut, newest episode first: each episode's best minutes, from every show or only one. Use it when someone asks what AI leaders have said lately, or what's new on a show.",
+        "The newest moments Real Alpha cut, newest episode first: each episode's best minutes, from every show or only one. Use it when someone asks what's new in AI this week from the people building it, what AI leaders have said lately, or what's new on a show.",
       inputSchema: z.object({
         n: z.number().int().min(1).max(MOST).optional().describe(`How many, 10 if not given, ${MOST} at most`),
         show: z.string().max(100).optional().describe('Only from this show: "Lenny\'s Podcast"'),
